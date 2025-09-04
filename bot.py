@@ -813,7 +813,7 @@ async def send_message(app: AsyncApp, channel: Channel, user: User, text: str, t
 async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_ts: str = "") -> None:
     help_text = (
         "Hi! :wave: I am *Hutbot* :palm_up_hand::tophat: Here's how you can configure me via command or @mention:\n\n"
-        "* :sparkles: I added support for multiple configurations per channel* :partying_face:\n\n"
+        "* :sparkles: Now I can also handle multiple configurations per channel* :partying_face:\n\n"
         "Now you can specify a config name after the command or @mention to edit a specific configuration.\n"
         f"All channels have a `{DEFAULT_CONFIG_NAME}` config, which also holds your previous configuration.\n"
         f"Commands can be uses as before. By omitting the config name, you'll edit `{DEFAULT_CONFIG_NAME}`.\n\n"
@@ -873,7 +873,7 @@ async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_
         "```/hutbot [config] set work-hours [start-time] [end-time]\n"
         "@Hutbot [config] set work-hours [start-time] [end-time]```\n"
         "Respond to messages during these hours. Set `0:00` `0:00` for all day.\n\n"
-        ":new: :sparkle: *Set Message Pattern:*\n"
+        ":sparkles: *Set Message Pattern:* :new:\n"
         "```/hutbot [config] set pattern \"[regex]\"\n"
         "@Hutbot [config] set pattern \"[regex]\"```\n"
         "Respond to messages matching this regex. Enclose the regex in quotes.\n\n"
