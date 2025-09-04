@@ -78,7 +78,7 @@ async def test_process_command_set_pattern():
 
     with patch('bot.send_message') as mock_send_message:
         await set_pattern(app, channel, "default", '"*"', None, user, "")
-        mock_send_message.assert_called_with(app, channel, user, "Invalid regex pattern: `nothing to repeat at position 0`", "")
+        mock_send_message.assert_called_with(app, channel, user, "Invalid pattern: `nothing to repeat at position 0`", "")
 
 @pytest.mark.asyncio
 async def test_process_command_set_pattern_empty():

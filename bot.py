@@ -629,12 +629,14 @@ async def set_pattern(app: AsyncApp, channel: Channel, config_name: str, pattern
     if config_name not in channel.configs:
         channel.configs[config_name] = DEFAULT_CONFIG.copy()
 
+    if pattern_str and ((pattern_str.startswith('"') and pattern_str.endswith('"')) or (pattern_str.startswith("'") and pattern_str.endswith("'"))):
+        pattern_str = pattern_str[1:-1]
+
     # Validate the regex pattern
-    pattern_str = pattern_str.strip('"')
     try:
         re.compile(pattern_str)
     except re.error as e:
-        await send_message(app, channel, user, f"Invalid regex pattern: `{e}`", thread_ts)
+        await send_message(app, channel, user, f"Invalid pattern: `{e}`", thread_ts)
         return
 
     case_sensitive = case_sensitive_str is not None and case_sensitive_str.lower() in ['true', '1']
