@@ -826,7 +826,7 @@ async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_
         "> Also, you could specify a *regex pattern to only respond to certain messages* :new:.\n"
         ">   *1.* When a message contains `.*sales.*` :arrow_right: sales team is notified.\n"
         ">   *2.* When a message contains `.*customer.*` :arrow_right: customer service team is notified.\n>\n"
-        "> Maybe I could also do some AI magic here in the future? :sparkles:\n\n\n"
+        "> Maybe I could also do some AI magic here in the future? :sparkles:\n\n"
         "*Enable OpsGenie Integration:*\n"
         "```/hutbot [config] enable opsgenie\n"
         "@Hutbot [config] enable opsgenie```\n"
