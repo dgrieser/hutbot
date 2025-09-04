@@ -158,28 +158,28 @@ async def test_multi_cancel_reaction_added():
     task2.cancel.assert_called_once()
     assert len(scheduled_messages) == 0
 
-# @pytest.mark.asyncio
-# async def test_show_config():
-#     app = AsyncMock()
-#     configs = {
-#         "alarms": {"pattern": ".*alarm.*", "wait_time": 300, "reply_message": "Alarm message"},
-#         "default": {"wait_time": 600, "reply_message": "Default message"}
-#     }
-#     for name, cfg in configs.items():
-#         for k, v in DEFAULT_CONFIG.items():
-#             if k not in cfg:
-#                 cfg[k] = v
-#     channel = Channel(id="C123", name="general", configs=configs)
-#     user = User(id="U123", name="test", real_name="Test User", team="A")
+@pytest.mark.asyncio
+async def test_show_config():
+    app = AsyncMock()
+    configs = {
+        "alarms": {"pattern": ".*alarm.*", "wait_time": 300, "reply_message": "Alarm message"},
+        "default": {"wait_time": 600, "reply_message": "Default message"}
+    }
+    for name, cfg in configs.items():
+        for k, v in DEFAULT_CONFIG.items():
+            if k not in cfg:
+                cfg[k] = v
+    channel = Channel(id="C123", name="general", configs=configs)
+    user = User(id="U123", name="test", real_name="Test User", team="A")
 
-#     with patch('bot.send_message') as mock_send_message:
-#         await show_config(app, channel, user, "")
+    with patch('bot.send_message') as mock_send_message:
+        await show_config(app, channel, user, "")
 
-#         sent_message = mock_send_message.call_args.args[3]
-#         assert "*Configuration*: `default`" in sent_message
-#         assert "Wait time: `10` minutes" in sent_message
-#         assert "Default message" in sent_message
-#         assert "*Configuration*: `alarms`" in sent_message
-#         assert "Wait time: `5` minutes" in sent_message
-#         assert "Pattern: `.*alarm.*` (case-insensitive)" in sent_message
-#         assert "Alarm message" in sent_message
+        sent_message = mock_send_message.call_args.args[3]
+        assert "*Configuration*: `default`" in sent_message
+        assert "*Wait time*: `10` minutes" in sent_message
+        assert "Default message" in sent_message
+        assert "*Configuration*: `alarms`" in sent_message
+        assert "*Wait time*: `5` minutes" in sent_message
+        assert "*Pattern*: `.*alarm.*` (case-insensitive)" in sent_message
+        assert "Alarm message" in sent_message
