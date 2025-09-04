@@ -818,7 +818,7 @@ async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_
         f"All channels have a `{DEFAULT_CONFIG_NAME}` config, which also holds your previous configuration.\n"
         f"Commands can be uses as before. By omitting the config name, you'll edit `{DEFAULT_CONFIG_NAME}`.\n\n"
         "*Enable OpsGenie Integration:*\n"
-        "```/hutbot enable opsgenie\n"
+        "```/hutbot [config] enable opsgenie\n"
         "@Hutbot [config] enable opsgenie```\n"
         "Enables the OpsGenie integration.\n\n"
         "*Disable OpsGenie Integration:*\n"
