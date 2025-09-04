@@ -27,9 +27,10 @@ async def test_process_command_set_wait_time():
     user = User("U12345", "test", "Test User", "Testers")
     thread_ts = "1234567890.123456"
 
-    with patch('bot.set_wait_time') as mock_set_wait_time:
+    with patch('bot.save_configuration'), patch('bot.send_message') as mock_send_message:
         await process_command(app, "set wait-time 10", channel, user, thread_ts)
-        mock_set_wait_time.assert_called_once_with(app, channel, "default", 10, user, thread_ts)
+        assert channel.configs["default"]["wait_time"] == 600
+        mock_send_message.assert_called_with(app, channel, user, "*Wait time* set to `10` minutes in configuration `default`.", thread_ts)
 
 @pytest.mark.asyncio
 async def test_process_command_set_wait_time_custom_config():
@@ -38,9 +39,10 @@ async def test_process_command_set_wait_time_custom_config():
     user = User("U12345", "test", "Test User", "Testers")
     thread_ts = "1234567890.123456"
 
-    with patch('bot.set_wait_time') as mock_set_wait_time:
+    with patch('bot.save_configuration'), patch('bot.send_message') as mock_send_message:
         await process_command(app, "my-config set wait-time 20", channel, user, thread_ts)
-        mock_set_wait_time.assert_called_once_with(app, channel, "my-config", 20, user, thread_ts)
+        assert channel.configs["my-config"]["wait_time"] == 1200
+        mock_send_message.assert_called_with(app, channel, user, "*Wait time* set to `20` minutes in configuration `my-config`.", thread_ts)
 
 @pytest.mark.asyncio
 async def test_migrate_and_apply_defaults():
@@ -63,7 +65,7 @@ async def test_migrate_and_apply_defaults():
     assert migrated_config["C123"]["default"]["pattern"] is None
 
 @pytest.mark.asyncio
-async def test_set_pattern():
+async def test_process_command_set_pattern():
     app = AsyncMock()
     channel = Channel(id="C12345", name="general", configs={})
     user = User("U12345", "test", "Test User", "Testers")
@@ -77,6 +79,30 @@ async def test_set_pattern():
     with patch('bot.send_message') as mock_send_message:
         await set_pattern(app, channel, "default", '"*"', None, user, "")
         mock_send_message.assert_called_with(app, channel, user, "Invalid regex pattern: `nothing to repeat at position 0`", "")
+
+@pytest.mark.asyncio
+async def test_process_command_set_pattern_empty():
+    app = AsyncMock()
+    channel = Channel(id="C12345", name="general", configs={})
+    user = User("U12345", "test", "Test User", "Testers")
+
+    with patch('bot.save_configuration'), patch('bot.send_message') as mock_send_message:
+        await set_pattern(app, channel, "default", '""', "true", user, "")
+        assert channel.configs["default"]["pattern"] == ""
+        assert channel.configs["default"]["pattern_case_sensitive"] is True
+        mock_send_message.assert_called_with(app, channel, user, "Pattern set to `` for configuration `default`. (case-sensitive)", "")
+
+@pytest.mark.asyncio
+async def test_process_command_set_pattern_custom_config():
+    app = AsyncMock()
+    channel = Channel(id="C12345", name="general", configs={"default": DEFAULT_CONFIG.copy()})
+    user = User("U12345", "test", "Test User", "Testers")
+    
+    with patch('bot.save_configuration'), patch('bot.send_message') as mock_send_message:
+        await set_pattern(app, channel, "my-config", '".*alarm.*"', "true", user, "")
+        assert channel.configs["my-config"]["pattern"] == ".*alarm.*"
+        assert channel.configs["my-config"]["pattern_case_sensitive"] is True
+        mock_send_message.assert_called_with(app, channel, user, "Pattern set to `.*alarm.*` for configuration `my-config`. (case-sensitive)", "")
 
 @pytest.mark.asyncio
 async def test_handle_channel_message_multi_config_and_pattern():

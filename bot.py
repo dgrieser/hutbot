@@ -19,6 +19,7 @@ User = collections.namedtuple('User', ['id', 'name', 'real_name', 'team'])
 Usergroup = collections.namedtuple('Usergroup', ['id', 'handle', 'name'])
 Channel = collections.namedtuple('Channel', ['id', 'name', 'configs'])
 
+DEFAULT_CONFIG_NAME = 'default'
 DEFAULT_CONFIG = {
     "wait_time": 30 * 60,
     "reply_message": "Anybody?",
@@ -64,6 +65,7 @@ opsgenie_configured = False
 MENTION_PATTERN = re.compile(r'(?<![|<])@([a-z0-9-_.]+)(?!>)')
 ID_PATTERN = re.compile(r'<([#@!][a-zA-Z0-9^]+)([|]([^>]*))?>')
 TIME_HOUR_PATTERN = re.compile(r"^[0-9]{1,2}$")
+CONFIG_NAME_PATTERN = re.compile(r"^[A-Za-z0-9-_\.:/]+$")
 
 # Regex patterns for command parsing
 def create_command_pattern(command_regex: str) -> re.Pattern:
@@ -72,7 +74,7 @@ def create_command_pattern(command_regex: str) -> re.Pattern:
 HELP_PATTERN = re.compile(r'help', re.IGNORECASE)
 SET_WAIT_TIME_PATTERN = create_command_pattern(r'(set\s+)?wait([_ -]?time)?\s+(?P<wait_time>.+)')
 SET_REPLY_MESSAGE_PATTERN = create_command_pattern(r'(set\s+)?(message|reply)\s+(?P<message>.+)')
-SET_PATTERN_PATTERN = create_command_pattern(r'set\s+pattern\s+(?P<pattern>".*?"|\S+)(?:\s+(?P<case_sensitive>true|false|1|0))?')
+SET_PATTERN_PATTERN = create_command_pattern(r'set\s+pattern\s+(?P<pattern>"[^"]*"|\'[^\']*\'|[^\r\n\t\f\v\s"\']+)(?:\s+(?P<case_sensitive>true|false|1|0))?')
 ADD_EXCLUDED_TEAM_PATTERN = create_command_pattern(r'(add\s+)?excluded?([_ -]?teams?)?\s+(?P<team>.+)')
 CLEAR_EXCLUDED_TEAM_PATTERN = create_command_pattern(r'clear\s+excluded?([_ -]?teams?)?')
 ADD_INCLUDED_TEAM_PATTERN = create_command_pattern(r'(add\s+)?included?([_ -]?teams?)?\s+(?P<team>.+)')
@@ -179,7 +181,7 @@ async def migrate_and_apply_defaults(app: AsyncApp, config: dict) -> dict:
         if is_flat_config:
             # This looks like an old, flat config. Let's wrap it.
             log(f"Migrating old configuration for channel {channel_id}")
-            channel_data = {"default": channel_data}
+            channel_data = {DEFAULT_CONFIG_NAME: channel_data}
             config[channel_id] = channel_data
 
         for config_name, single_config in channel_data.items():
@@ -469,26 +471,8 @@ def is_work_time(start_time_str: str, end_time_str: str) -> bool:
 def is_command(text: str) -> bool:
     return f"<@{bot_user_id}>" in text
 
-async def process_command(app: AsyncApp, text: str, channel: Channel, user: User, thread_ts: str = "") -> None:
-    text = text.replace(f"<@{bot_user_id}>", "").strip()
-
-    log_debug(channel, f"Received command for channel #{channel.name}: {text}")
-
-    parts = text.split()
-    config_name = "default"
-    command_text = text
-
-    # This is a bit of a hack. If the first word does not match any known command keywords,
-    # we assume it's a configuration name.
-    known_command_keywords = ['set', 'add', 'clear', 'list', 'team', 'enable', 'disable', 'show', 'help']
-    if parts and parts[0] not in known_command_keywords:
-        # It's not a perfect check, as a team name could be "set", but it's good enough for now.
-        is_command_like = any(p.match(parts[0]) for p in [LIST_TEAMS_PATTERN, EMPLOYEE_TEAM_PATTERN, SHOW_CONFIG_PATTERN, HELP_PATTERN])
-        if not is_command_like:
-            config_name = parts[0]
-            command_text = " ".join(parts[1:])
-
-    # Parse commands
+async def parse_and_execute_command(app: AsyncApp, command_text: str, channel: Channel, config_name: str, user: User, thread_ts: str = "") -> bool:
+    """Parses and executes a command, returns True if a command was matched."""
     if (match := SET_WAIT_TIME_PATTERN.match(command_text)):
         wait_time_minutes = int(match.group("wait_time").strip('"').strip("'"))
         await set_wait_time(app, channel, config_name, wait_time_minutes, user, thread_ts)
@@ -535,7 +519,31 @@ async def process_command(app: AsyncApp, text: str, channel: Channel, user: User
     elif HELP_PATTERN.match(command_text):
         await send_help_message(app, channel, user, thread_ts)
     else:
-        await send_message(app, channel, user, "Huh? :thinking_face: Maybe type `/hutbot help` for a list of commands.", thread_ts)
+        return False
+    return True
+
+async def process_command(app: AsyncApp, text: str, channel: Channel, user: User, thread_ts: str = "") -> None:
+    text = text.replace(f"<@{bot_user_id}>", "").strip()
+    log_debug(channel, f"Received command for channel #{channel.name}: {text}")
+
+    # First, try to parse the command with the default config.
+    if await parse_and_execute_command(app, text, channel, DEFAULT_CONFIG_NAME, user, thread_ts):
+        return
+
+    # If that fails, assume the first part is a config name.
+    parts = text.split()
+    if len(parts) > 1:
+        config_name = parts[0]
+        command_text = " ".join(parts[1:])
+
+        if not CONFIG_NAME_PATTERN.match(config_name):
+            await send_message(app, channel, user, f"Invalid config name: `{config_name}`. Only characters `A-Z`, `a-z`, `0-9`, `.`, `:`, `/`, `-`, `_` are allowed.", thread_ts)
+            return
+
+        if await parse_and_execute_command(app, command_text, channel, config_name, user, thread_ts):
+            return
+
+    await send_message(app, channel, user, "Huh? :thinking_face: Maybe type `/hutbot help` for a list of commands.", thread_ts)
 
 async def set_bots(app: AsyncApp, channel: Channel, config_name: str, enabled: bool, user: User, thread_ts: str = "") -> None:
     if config_name not in channel.configs:
@@ -805,17 +813,21 @@ async def send_message(app: AsyncApp, channel: Channel, user: User, text: str, t
 async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_ts: str = "") -> None:
     help_text = (
         "Hi! :wave: I am *Hutbot* :palm_up_hand::tophat: Here's how you can configure me via command or @mention:\n\n"
+        "* :sparkles: I added support for multiple configurations per channel* :partying_face:\n\n"
+        "Now you can specify a config name after the command or @mention to edit a specific configuration.\n"
+        f"All channels have a `{DEFAULT_CONFIG_NAME}` config, which also holds your previous configuration.\n"
+        f"Commands can be uses as before. By omitting the config name, you'll edit `{DEFAULT_CONFIG_NAME}`.\n\n"
         "*Enable OpsGenie Integration:*\n"
         "```/hutbot enable opsgenie\n"
-        "@Hutbot enable opsgenie```\n"
+        "@Hutbot [config] enable opsgenie```\n"
         "Enables the OpsGenie integration.\n\n"
         "*Disable OpsGenie Integration:*\n"
-        "```/hutbot disable opsgenie\n"
-        "@Hutbot disable opsgenie```\n"
+        "```/hutbot [config] disable opsgenie\n"
+        "@Hutbot [config] disable opsgenie```\n"
         "Disables the OpsGenie integration.\n\n"
         "*Set Wait Time:*\n"
-        "```/hutbot set wait-time [minutes]\n"
-        "@Hutbot set wait-time [minutes]```\n"
+        "```/hutbot [config] set wait-time [minutes]\n"
+        "@Hutbot [config] set wait-time [minutes]```\n"
         "Sets the wait time before I send a reminder. Replace `[minutes]` with the number of minutes you want.\n\n"
         "*List Available Teams:*\n"
         "```/hutbot list teams\n"
@@ -826,49 +838,53 @@ async def send_help_message(app: AsyncApp, channel: Channel, user: User, thread_
         "@Hutbot team of [user]```\n"
         "Lists the team of a user. Replace `[user]` with @<user>.\n\n"
         "*Add Excluded Team:*\n"
-        "```/hutbot add excluded-team [team]\n"
-        "@Hutbot add excluded-team [team]```\n"
+        "```/hutbot [config] add excluded-team [team]\n"
+        "@Hutbot [config] add excluded-team [team]```\n"
         "Adds a team whose members I will not respond to. Replace `[team]` with the name of the team.\n\n"
         "*Clear Excluded Teams:*\n"
-        "```/hutbot clear excluded-teams\n"
-        "@Hutbot clear excluded-teams```\n"
+        "```/hutbot [config] clear excluded-teams\n"
+        "@Hutbot [config] clear excluded-teams```\n"
         "Clears the list of excluded teams.\n\n"
         "*Add Included Team:*\n"
-        "```/hutbot add included-team [team]\n"
-        "@Hutbot add included-team [team]```\n"
+        "```/hutbot [config] add included-team [team]\n"
+        "@Hutbot [config] add included-team [team]```\n"
         "Adds a team whose members I will respond to *only*. Replace `[team]` with the name of the team.\n\n"
         "*Clear Included Teams:*\n"
-        "```/hutbot clear included-teams\n"
-        "@Hutbot clear included-teams```\n"
+        "```/hutbot [config] clear included-teams\n"
+        "@Hutbot [config] clear included-teams```\n"
         "Clears the list of included teams.\n\n"
         "*Include Bot Messages:*\n"
-        "```/hutbot enable bots\n"
-        "@Hutbot enable bots```\n"
+        "```/hutbot [config] enable bots\n"
+        "@Hutbot [config] enable bots```\n"
         "Also responds to messages from bots.\n\n"
         "*Exclude Bot Messages:*\n"
-        "```/hutbot disable bots\n"
-        "@Hutbot disable bots```\n"
+        "```/hutbot [config] disable bots\n"
+        "@Hutbot [config] disable bots```\n"
         "Don't respond to messages from bots.\n\n"
         "*Only Work Days:*\n"
-        "```/hutbot enable only-work-days\n"
-        "@Hutbot enable only-work-days```\n"
+        "```/hutbot [config] enable only-work-days\n"
+        "@Hutbot [config] enable only-work-days```\n"
         "Only respond to messages on work days.\n\n"
         "*All Days:*\n"
-        "```/hutbot disable only-work-days\n"
-        "@Hutbot disable only-work-days```\n"
+        "```/hutbot [config] disable only-work-days\n"
+        "@Hutbot [config] disable only-work-days```\n"
         "Respond to messages on all days.\n\n"
         "*Set Work Hours:*\n"
-        "```/hutbot set work-hours [start-time] [end-time]\n"
-        "@Hutbot set work-hours [start-time] [end-time]```\n"
+        "```/hutbot [config] set work-hours [start-time] [end-time]\n"
+        "@Hutbot [config] set work-hours [start-time] [end-time]```\n"
         "Respond to messages during these hours. Set `0:00` `0:00` for all day.\n\n"
+        ":new: :sparkle: *Set Message Pattern:*\n"
+        "```/hutbot [config] set pattern \"[regex]\"\n"
+        "@Hutbot [config] set pattern \"[regex]\"```\n"
+        "Respond to messages matching this regex. Enclose the regex in quotes.\n\n"
         "*Set Reply Message:*\n"
-        "```/hutbot set message \"Your reminder message\"\n"
-        "@Hutbot set message \"Your reminder message\"```\n"
+        "```/hutbot [config] set message \"Your reminder message\"\n"
+        "@Hutbot [config] set message \"Your reminder message\"```\n"
         "Sets the reminder message I'll send. Enclose your message in quotes.\n\n"
         "*Show Current Configuration:*\n"
         "```/hutbot show config\n"
         "@Hutbot show config```\n"
-        "Displays the current wait time and reply message.\n\n"
+        f"Displays the configuration for #{channel.name}.\n\n"
         "*Help:*\n"
         "```/hutbot help\n"
         "@Hutbot help```\n"
